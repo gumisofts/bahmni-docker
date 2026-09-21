@@ -22,9 +22,10 @@ services:
     image: 'bahmni/proxy:${PROXY_IMAGE_TAG:?}'
     #volumes:
       # - ${CERTIFICATE_PATH}:/etc/tls
+    # Host nginx owns 80/443; it reverse-proxies to these localhost-only ports.
     ports:
-      - '80:80'
-      - '443:443'
+      - '127.0.0.1:8080:80'
+      - '127.0.0.1:8443:443'
     logging: *log-config
     restart: ${RESTART_POLICY}
     environment:
@@ -83,7 +84,7 @@ services:
     profiles: ["odoo","bahmni-standard"]
     image: 'bahmni/odoo-16:${ODOO_IMAGE_TAG:?[ERROR]}'
     ports:
-      - '8069:8069'
+      - '127.0.0.1:8069:8069'
     volumes:
       - odooappdata:/var/lib/odoo
       - ${EXTRA_ADDONS_PATH}:/mnt/extra-addons
@@ -490,8 +491,8 @@ services:
       DB_USERNAME: ${DCM4CHEE_DB_USERNAME:?}
       DB_PASSWORD: ${DCM4CHEE_DB_PASSWORD:?}
     ports:
-      - '8055:8055'
-      - '11112:11112'
+      - '127.0.0.1:8055:8055'
+      - '127.0.0.1:11112:11112'
     volumes:
       - 'dcm4chee-archive:/var/lib/bahmni/dcm4chee/server/default/archive'
       - 'dcm4chee-config:/var/lib/bahmni/dcm4chee/server/default/data/xmbean-attrs'
