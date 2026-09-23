@@ -33,6 +33,8 @@ services:
 
   bahmni-config:
     image: 'bahmni/standard-config:${CONFIG_IMAGE_TAG:?}'
+    # Copies the stock config over CONFIG_VOLUME on every start; disabled because we ship our own default-config.
+    profiles: ["stock-config"]
     volumes:
       - '${CONFIG_VOLUME:?}:/usr/local/bahmni_config'
     logging: *log-config
