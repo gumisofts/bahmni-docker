@@ -309,6 +309,8 @@ services:
       MB_ADMIN_EMAIL: ${METABASE_ADMIN_EMAIL:?}
       MB_ADMIN_FIRST_NAME: ${METABASE_ADMIN_FIRST_NAME:?}
       MB_ADMIN_PASSWORD: ${METABASE_ADMIN_PASSWORD:?}
+      # Served behind the proxy at /metabase; without the path Metabase links assets from the site root.
+      MB_SITE_URL: ${METABASE_SITE_URL:?}
       MB_DB_TYPE: postgres
       MB_DB_DBNAME: ${METABASE_DB_NAME:?}
       MB_DB_PORT:  ${METABASE_DB_PORT:?}
