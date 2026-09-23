@@ -2,5 +2,9 @@
 .cache/
 **/backup-artifacts/*
 **/restore-artifacts/*
+**/.env.bak.*
+**/install-summary.txt
+backup-server/.env
 .DS_Store
 .playwright-mcp/
+__pycache__/

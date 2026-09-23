@@ -1,0 +1,18 @@
+# Append-only restic REST server that receives the hospitals' backups.
+# Managed by setup.sh / add_site.sh in this directory; bound to localhost and published by the host nginx.
+services:
+  rest-server:
+    image: restic/rest-server:${REST_SERVER_IMAGE_TAG:-0.14.0}
+    container_name: bahmni-backup-server
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${REST_SERVER_PORT:-8000}:8000'
+      # docker bridge gateway (set by setup.sh): lets a Bahmni stack on this same host reach the server
+      # as host.docker.internal:8000 without leaving the machine. 127.0.0.2 is a harmless placeholder.
+      - '${REST_SERVER_BIND_GW:-127.0.0.2}:${REST_SERVER_PORT:-8000}:8000'
+    environment:
+      # append-only: a compromised hospital server can add snapshots but never delete or overwrite them.
+      # private-repos: each site's credentials only reach /<site>/.
+      OPTIONS: "--append-only --private-repos"
+    volumes:
+      - '${BACKUP_DATA_DIR:-/srv/bahmni-backups}:/data'

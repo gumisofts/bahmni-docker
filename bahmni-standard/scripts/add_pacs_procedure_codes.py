@@ -40,14 +40,17 @@ def find_one(path, name):
     raise SystemExit(f"not found: {name}")
 
 
-def leaf_members(uuid, seen):
+def leaf_members(uuid, seen, visited_sets=None):
+    visited_sets = set() if visited_sets is None else visited_sets
+    if uuid in visited_sets or uuid in seen:
+        return
     c = call("GET", f"/concept/{uuid}?v=custom:(uuid,display,set,setMembers:(uuid))")
     if not c["set"]:
-        if uuid not in seen:
-            seen[uuid] = c["display"]
+        seen[uuid] = c["display"]
         return
+    visited_sets.add(uuid)  # CIEL sets can reference each other cyclically
     for m in c["setMembers"]:
-        leaf_members(m["uuid"], seen)
+        leaf_members(m["uuid"], seen, visited_sets)
 
 
 source_uuid = find_one("/conceptsource", SOURCE_NAME)

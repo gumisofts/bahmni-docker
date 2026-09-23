@@ -1,5 +1,3 @@
-version: '3.7'
-
 x-default-logging: &default
   {}
 
@@ -22,10 +20,10 @@ services:
     image: 'bahmni/proxy:${PROXY_IMAGE_TAG:?}'
     #volumes:
       # - ${CERTIFICATE_PATH}:/etc/tls
-    # Host nginx owns 80/443; it reverse-proxies to these localhost-only ports.
+    # Cloud: BIND_IP=127.0.0.1 behind the host nginx. On-prem: BIND_IP=0.0.0.0 with ports 80/443 (see scripts/install.sh).
     ports:
-      - '127.0.0.1:8080:80'
-      - '127.0.0.1:8443:443'
+      - '${BIND_IP:-127.0.0.1}:${PROXY_HTTP_PORT:-8080}:80'
+      - '${BIND_IP:-127.0.0.1}:${PROXY_HTTPS_PORT:-8443}:443'
     logging: *log-config
     restart: ${RESTART_POLICY}
     environment:
@@ -74,6 +72,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      # first start imports the seed dump, which can take minutes on slow disks
+      start_period: 300s
     environment:
       TZ: ${TZ}
       POSTGRES_USER: ${OPENELIS_DB_USER:?}
@@ -86,7 +86,7 @@ services:
     profiles: ["odoo","bahmni-standard"]
     image: 'bahmni/odoo-16:${ODOO_IMAGE_TAG:?[ERROR]}'
     ports:
-      - '127.0.0.1:8069:8069'
+      - '127.0.0.1:${ODOO_HOST_PORT:-8069}:8069'
     volumes:
       - odooappdata:/var/lib/odoo
       - ${EXTRA_ADDONS_PATH}:/mnt/extra-addons
@@ -116,6 +116,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 300s
     environment:
       TZ: ${TZ}
       POSTGRES_DB: ${ODOO_DB_NAME:?}
@@ -502,8 +503,9 @@ services:
       DB_USERNAME: ${DCM4CHEE_DB_USERNAME:?}
       DB_PASSWORD: ${DCM4CHEE_DB_PASSWORD:?}
     ports:
-      - '127.0.0.1:8055:8055'
-      - '127.0.0.1:11112:11112'
+      - '127.0.0.1:${DCM4CHEE_WEB_HOST_PORT:-8055}:8055'
+      # DICOM port: modalities on the hospital LAN send studies here, so it follows BIND_IP.
+      - '${BIND_IP:-127.0.0.1}:${DICOM_PORT:-11112}:11112'
     volumes:
       - 'dcm4chee-archive:/var/lib/bahmni/dcm4chee/server/default/archive'
       - 'dcm4chee-config:/var/lib/bahmni/dcm4chee/server/default/data/xmbean-attrs'
@@ -617,9 +619,39 @@ services:
         - 'dcm4chee-archive:/mounts/dcm4chee-archive'
         - 'configuration_checksums:/mounts/configuration_checksums'
 
+  backup:
+    # One-off restic runner used by scripts/backup_to_cloud.sh and scripts/restore_from_cloud.sh.
+    # Volumes are mounted under fixed paths so snapshots are portable between hosts and project names.
+    image: restic/restic:${RESTIC_IMAGE_TAG:-0.18.1}
+    profiles: ["backup"]
+    hostname: ${BACKUP_SITE_NAME:-bahmni}
+    # lets a repository on this same machine be addressed as host.docker.internal (e.g. the cloud server backing itself up)
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    environment:
+      TZ: ${TZ}
+      RESTIC_REPOSITORY: ${BACKUP_REPOSITORY}
+      RESTIC_PASSWORD: ${BACKUP_PASSWORD}
+      RESTIC_CACHE_DIR: /cache
+    volumes:
+      - 'restic-cache:/cache'
+      - './backup-artifacts:/data/db-dumps'
+      - 'bahmni-patient-images:/data/volumes/bahmni-patient-images'
+      - 'bahmni-document-images:/data/volumes/bahmni-document-images'
+      - 'bahmni-clinical-forms:/data/volumes/bahmni-clinical-forms'
+      - 'bahmni-lab-results:/data/volumes/bahmni-lab-results'
+      - 'bahmni-uploaded-files:/data/volumes/bahmni-uploaded-files'
+      - 'bahmni-queued-reports:/data/volumes/bahmni-queued-reports'
+      - 'configuration_checksums:/data/volumes/configuration_checksums'
+      - 'dcm4chee-archive:/data/volumes/dcm4chee-archive'
+      - 'dcm4chee-config:/data/volumes/dcm4chee-config'
+      - 'odoofilestore:/data/volumes/odoofilestore'
+      - 'odooconfig:/data/volumes/odooconfig'
+      - 'sms-token:/data/volumes/sms-token'
+    logging: *log-config
+
   ipd:
     image: bahmni/microfrontend-ipd:${IPD_TAG:?}
-    container_name: ipd
     profiles: ["emr","bahmni-standard","bahmni-mart"]
     restart: ${RESTART_POLICY}
     # volumes:
@@ -682,3 +714,4 @@ volumes:
   reportsdbdata:
   pacsdbdata:
   dcm4chee-config:
+  restic-cache:
