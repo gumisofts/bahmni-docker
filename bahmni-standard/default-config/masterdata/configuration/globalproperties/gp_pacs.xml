@@ -1,0 +1,9 @@
+<config>
+  <globalProperties>
+    <globalProperty>
+      <!-- AE_TITLE@host:port of the dcm4chee container; without it the pacsquery module answers 501 -->
+      <property>pacsquery.pacsConfig</property>
+      <value>DCM4CHEE@dcm4chee:11112</value>
+    </globalProperty>
+  </globalProperties>
+</config>

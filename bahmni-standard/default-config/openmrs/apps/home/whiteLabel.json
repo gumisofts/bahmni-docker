@@ -56,7 +56,7 @@
 			"link": "/dcm4chee-web3"
 		},
 		{
-			"enabled": false,
+			"enabled": true,
 			"name": "metabase",
 			"title": "Analytics",
 			"logo": "/bahmni/images/analytics.png",
