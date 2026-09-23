@@ -1,0 +1,24 @@
+[
+    {
+        "type": "PATIENT_ADMIT",
+        "tasks": [
+            {
+                "name": "Collect patient history"
+            },
+            {
+                "name": "Record medications taken by the patient already"
+            },
+            {
+                "name": "Record Vitals"
+            }
+        ]
+    },
+    {
+        "type": "SHIFT_START_TASK",
+        "tasks": []
+    },
+    {
+        "type": "ROLLOVER_TASK",
+        "tasks": []
+    }
+]

@@ -554,7 +554,7 @@ services:
 
   atomfeed-console:
     image: bahmni/atomfeed-console:${ATOMFEED_CONSOLE_IMAGE_TAG:?}
-    profiles: ["atomfeed-console"]
+    profiles: ["atomfeed-console", "bahmni-standard"]
     restart: ${RESTART_POLICY}
     environment:
       TZ: ${TZ}
