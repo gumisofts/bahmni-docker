@@ -7,24 +7,29 @@
         "calculateDoseOnlyOnCurrentVisitValues": false
       },
       "inputOptionsConfig": {
-        "defaultDurationUnit": "Day(s)",
+        "durationUnitsFactors": [
+          {"name": "Days", "factor": 1},
+          {"name": "Weeks", "factor": 7},
+          {"name": "Months", "factor": 30}
+        ],
+        "defaultDurationUnit": "Days",
         "hideOrderSet" : false,
         "defaultInstructions": "As directed",
         "frequencyDefaultDurationUnitsMap": [
           {
             "minFrequency": "1/7",
             "maxFrequency": 5,
-            "defaultDurationUnit": "Day(s)"
+            "defaultDurationUnit": "Days"
           },
           {
             "minFrequency": "1/30",
             "maxFrequency": "1/7",
-            "defaultDurationUnit": "Week(s)"
+            "defaultDurationUnit": "Weeks"
           },
           {
             "minFrequency": null,
             "maxFrequency": "1/30",
-            "defaultDurationUnit": "Month(s)"
+            "defaultDurationUnit": "Months"
           }
         ],
         "drugFormDefaults": {
@@ -33,7 +38,7 @@
             "route": "Oral"
           },
           "Capsule": {
-            "doseUnits": "Capsule(s)",
+            "doseUnits": "Capsule",
             "route": "Oral"
           },
           "Cream": {
@@ -44,18 +49,18 @@
             "route": "Topical"
           },
           "Food Supplement": {
-            "doseUnits": "Unit(s)",
+            "doseUnits": "Unit",
             "route": "Oral"
           },
           "Gel": {
             "route": "Topical"
           },
           "Granule": {
-            "doseUnits": "Unit(s)",
+            "doseUnits": "Unit",
             "route": "Oral"
           },
           "Inhaler": {
-            "doseUnits": "Puff(s)",
+            "doseUnits": "Puff",
             "route": "Inhalation"
           },
           "Injection": {
@@ -76,7 +81,7 @@
             "route": "Topical"
           },
           "Pessary": {
-            "doseUnits": "Unit(s)",
+            "doseUnits": "Unit",
             "route": "Per Vaginal"
           },
           "Powder": {
@@ -88,7 +93,7 @@
             "route": "Topical"
           },
           "Spray": {
-            "doseUnits": "Puff(s)",
+            "doseUnits": "Puff",
             "route": "Nasal"
           },
           "Syrup": {
@@ -96,7 +101,7 @@
             "route": "Oral"
           },
           "Tablet": {
-            "doseUnits": "Tablet(s)",
+            "doseUnits": "Tablet",
             "route": "Oral"
           }
         }
