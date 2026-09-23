@@ -568,7 +568,8 @@ services:
     environment:
       TZ: ${TZ}
       OPENMRS_DB_HOST: ${OPENMRS_DB_HOST}
-      OPENMRS_DB_NAME: ${OPENMRS_DB_NAME}
+      # Console ships MySQL Connector 5.1.8, which cannot negotiate MySQL 8's default utf8mb4 collation.
+      OPENMRS_DB_NAME: "${OPENMRS_DB_NAME}?characterEncoding=utf8&useUnicode=true"
       OPENMRS_DB_USERNAME: ${OPENMRS_DB_USERNAME}
       OPENMRS_DB_PASSWORD: ${OPENMRS_DB_PASSWORD}
       ODOO_DB_HOST: ${ODOO_DB_HOST}
