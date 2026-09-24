@@ -40,6 +40,24 @@ CHANGED=0
 stage_wanted() { [[ -z "$ONLY" || ",$ONLY," == *",$1,"* ]]; }
 fail_stage() { warn "$*"; FAILED+=("$1"); }
 
+# Stock Bahmni passwords. Writing them into a site that already has real ones would be a downgrade,
+# so a stage refuses to run while its credentials still carry the template value (install.sh replaces them all).
+declare -A STOCK_PASSWORDS=(
+  [OPENMRS_ADMIN_PASSWORD]=Admin123 [OPENMRS_ATOMFEED_PASSWORD]=Admin123 [REPORTS_OPENMRS_SERVICE_PASSWORD]=Admin123
+  [OPENELIS_ADMIN_PASSWORD]='adminADMIN!' [OPENELIS_ATOMFEED_PASSWORD]='AdminadMIN*'
+  [ODOO_ADMIN_PASSWORD]=admin [ODOO_ATOMFEED_PASSWORD]=Admin123 [ODOO_MASTER_PASSWORD]=admin
+  [DCM4CHEE_ADMIN_PASSWORD]=admin
+)
+real_passwords() { # STAGE VAR... -> 0 when every VAR is set and differs from its stock value
+  local stage="$1" v bad=(); shift
+  for v in "$@"; do
+    [[ -z "${!v:-}" || "${!v}" == "${STOCK_PASSWORDS[$v]:-}" ]] && bad+=("$v")
+  done
+  [[ ${#bad[@]} == 0 ]] && return 0
+  fail_stage "$stage" "${bad[*]} still empty or at the stock default in $ENV_FILE - set real values first"
+  return 1
+}
+
 # ---------------------------------------------------------------------------------------------
 # OpenMRS
 # ---------------------------------------------------------------------------------------------
@@ -77,6 +95,7 @@ set_openmrs_password() {
 }
 
 stage_openmrs_accounts() {
+  real_passwords openmrs-accounts OPENMRS_ADMIN_PASSWORD OPENMRS_ATOMFEED_PASSWORD REPORTS_OPENMRS_SERVICE_PASSWORD || return
   wait_openmrs || { fail_stage openmrs-accounts "OpenMRS did not come up"; return; }
   clear_openmrs_lockouts
   local uuid stock_user=superman stock_pw=Admin123
@@ -235,7 +254,7 @@ odoo_conf_set() { # KEY VALUE -> returns 0 if changed
 
 stage_odoo() {
   service_enabled odoo || { ok "odoo not enabled - skipped"; return; }
-  [[ -n "${ODOO_ADMIN_PASSWORD:-}" && -n "${ODOO_MASTER_PASSWORD:-}" && -n "${ODOO_ATOMFEED_PASSWORD:-}" ]] || { fail_stage odoo "ODOO_ADMIN_PASSWORD / ODOO_MASTER_PASSWORD / ODOO_ATOMFEED_PASSWORD missing in .env"; return; }
+  real_passwords odoo ODOO_ADMIN_PASSWORD ODOO_ATOMFEED_PASSWORD ODOO_MASTER_PASSWORD || return
   local url="http://127.0.0.1:${ODOO_HOST_PORT}" restart=0 k owner
   # The filestore volume is created root-owned (odoodb mounts it first, the odoo image has no such
   # directory), so Odoo's first start dies with PermissionError until it is handed to the odoo user.
@@ -298,7 +317,7 @@ set_elis_password() { # LOGIN PASSWORD
 
 stage_openelis() {
   service_enabled openelis || { ok "openelis not enabled - skipped"; return; }
-  [[ -n "${OPENELIS_ADMIN_PASSWORD:-}" && -n "${OPENELIS_ATOMFEED_PASSWORD:-}" ]] || { fail_stage openelis "OPENELIS_ADMIN_PASSWORD / OPENELIS_ATOMFEED_PASSWORD missing in .env"; return; }
+  real_passwords openelis OPENELIS_ADMIN_PASSWORD OPENELIS_ATOMFEED_PASSWORD || return
   wait_for_http "OpenELIS" "https://127.0.0.1:${PROXY_HTTPS_PORT}/openelis/LoginPage.do" '^200$' "$WAIT_TIMEOUT" || { fail_stage openelis "OpenELIS did not come up"; return; }
   local start=$SECONDS
   until [[ "$(psql_c openelisdb "$OPENELIS_DB_USER" "$OPENELIS_DB_NAME" "SELECT count(*) FROM clinlims.login_user WHERE login_name IN ('admin','$OPENELIS_ATOMFEED_USER');" 2>/dev/null)" == 2 ]]; do
@@ -314,7 +333,7 @@ stage_openelis() {
 # ---------------------------------------------------------------------------------------------
 stage_dcm4chee() {
   service_enabled dcm4chee || { ok "dcm4chee not enabled - skipped"; return; }
-  [[ -n "${DCM4CHEE_ADMIN_PASSWORD:-}" ]] || { fail_stage dcm4chee "DCM4CHEE_ADMIN_PASSWORD missing in .env"; return; }
+  real_passwords dcm4chee DCM4CHEE_ADMIN_PASSWORD || return
   wait_for_postgres pacsdb postgres "$WAIT_TIMEOUT" || { fail_stage dcm4chee "pacsdb not ready"; return; }
   local q="psql_c pacsdb $DCM4CHEE_DB_USERNAME $DCM4CHEE_DB_NAME" start=$SECONDS want stored
   log "waiting for dcm4chee schema ..."

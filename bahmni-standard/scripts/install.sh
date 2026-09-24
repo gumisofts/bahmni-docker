@@ -110,6 +110,7 @@ fi
 [[ "$ADMIN_PW" =~ [0-9] && "$ADMIN_PW" =~ [a-z] && "$ADMIN_PW" =~ [A-Z] && ${#ADMIN_PW} -ge 8 ]] \
   || die "OpenMRS requires at least 8 characters with upper case, lower case and a digit"
 case "$ADMIN_PW" in *\'*|*\"*|*\\*|*\$*|*\`*) die "the admin password must not contain quotes, backslashes, \$ or backticks" ;; esac
+case "$ADMIN_PW" in Admin123|admin|'adminADMIN!'|'Admin@123'|password) die "that is a stock Bahmni password - choose a different one" ;; esac
 
 cat <<EOF
 

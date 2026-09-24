@@ -8,9 +8,11 @@
 # template, pulls, re-applies those values on top of the new template, then pulls images,
 # recreates changed containers and re-runs bootstrap-site.sh. New template keys are listed so
 # you can review them.
-# Self-contained on purpose (no lib.sh) so it can be fetched and run on a server that predates it.
+# Self-contained on purpose (no lib.sh) so it can be fetched and run on a server that predates it:
+#   git fetch -q && git show origin/master:bahmni-standard/scripts/update.sh > /tmp/update.sh \
+#     && COMPOSE_DIR=$PWD/bahmni-standard bash /tmp/update.sh --no-restart
 set -o pipefail
-COMPOSE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+COMPOSE_DIR="${COMPOSE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 REPO_DIR="$(git -C "$COMPOSE_DIR" rev-parse --show-toplevel 2>/dev/null)" || { echo "not a git checkout"; exit 1; }
 REL_ENV="$(realpath --relative-to="$REPO_DIR" "$COMPOSE_DIR/.env")"
 ENV_FILE="$COMPOSE_DIR/.env"

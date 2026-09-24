@@ -68,7 +68,19 @@ docker compose ps                      # service health
 ```
 
 `update.sh` lists any new settings introduced by the update; review them in `.env` and then run
-`scripts/bootstrap-site.sh`.
+`scripts/bootstrap-site.sh`. `bootstrap-site.sh` never writes a stock template password into a running
+site: a stage whose credentials are still at the template value fails with a message instead.
+
+Upgrading a server that was installed before these scripts existed (the script is fetched first
+because the checkout does not have it yet):
+
+```bash
+cd ~/bahmni-docker && git fetch -q && git show origin/master:bahmni-standard/scripts/update.sh > /tmp/update.sh \
+  && COMPOSE_DIR=$PWD/bahmni-standard bash /tmp/update.sh --no-restart
+```
+
+Then set the new `*_ADMIN_PASSWORD` / `ODOO_MASTER_PASSWORD` keys in `.env` to the passwords the site
+already uses, `docker compose up -d`, `scripts/bootstrap-site.sh`.
 
 ## 4. Disaster recovery
 
