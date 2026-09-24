@@ -56,6 +56,26 @@ After installation:
 Behind an existing reverse proxy (like the cloud server) use `--behind-proxy`, which binds to
 `127.0.0.1:8080/8443` instead of `0.0.0.0:80/443`.
 
+### Servers that already run other things
+
+Everything Bahmni creates is namespaced by the compose project (containers, volumes, network), the
+databases are never published on host ports, and Docker is only installed if missing. What can
+collide, and what the installer does about it:
+
+| Shared resource | Behaviour |
+|---|---|
+| Ports 80/443 taken (their website, another app) | `install.sh` refuses before touching anything. Use `--behind-proxy` and add the generated `reverse-proxy-example.conf` server block to their nginx, or move Bahmni with `--http-port/--https-port`. |
+| Port 11112 taken (another PACS) | `--dicom-port N`, then configure the modalities with that port. |
+| Ports 8069 / 8055 taken (another Odoo, anything) | These are localhost-only helper ports; `--odoo-port/--pacs-web-port N`. |
+| Existing Docker with other compose projects | Fine; use a distinct `--project-name` if the directory name clashes. |
+| Existing MySQL/PostgreSQL on the host | No conflict: Bahmni's databases live in containers on the internal network only. |
+| Not enough RAM (Bahmni wants ~12 GB) | Installer warns. Drop analytics with `COMPOSE_PROFILES=bahmni-standard` in `.env` (-3 GB) or use a dedicated server. |
+| Hospital LAN in 172.16-172.31.x | Installer warns: Docker's default container subnets overlap it. Set `default-address-pools` in `/etc/docker/daemon.json` first. |
+| Disk shared with other services | Volumes live under `/var/lib/docker`; the DICOM archive grows fastest. Watch `docker system df`. |
+
+A dedicated (virtual) machine is still the recommendation: Java services are memory-hungry and a
+runaway neighbour can take the EMR down with it.
+
 ## 3. Day to day
 
 ```bash

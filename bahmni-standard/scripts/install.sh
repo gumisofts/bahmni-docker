@@ -14,8 +14,10 @@
 #   --admin-user LOGIN      OpenMRS admin login (default: hms-admin)
 #   --admin-password PW     password for the human admin logins (OpenMRS, OpenELIS, Odoo, dcm4chee, Metabase);
 #                           prompted if omitted
-#   --behind-proxy          bind to 127.0.0.1:8080/8443 for a host reverse proxy instead of 0.0.0.0:80/443
+#   --behind-proxy          bind to 127.0.0.1:8080/8443 for a host reverse proxy instead of 0.0.0.0:80/443;
+#                           writes reverse-proxy-example.conf with the nginx server block to add
 #   --http-port/--https-port/--dicom-port N
+#   --odoo-port/--pacs-web-port N   localhost-only helper ports (default 8069 / 8055), move them if another service uses them
 #   --backup-repo URL       restic repository (from backup-server/add_site.sh on the cloud server)
 #   --backup-password PW    restic repository key
 #   --load-images FILE      docker load an offline image bundle before starting
@@ -27,7 +29,7 @@ set -o pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SITE_NAME="" HOSTNAME_FQDN="" ADMIN_USER="hms-admin" ADMIN_PW="" BEHIND_PROXY=0
-HTTP_PORT="" HTTPS_PORT="" DICOM="11112" BACKUP_REPO="" BACKUP_PW="" LOAD_IMAGES="" PROJECT="" YES=0 WAIT=1200
+HTTP_PORT="" HTTPS_PORT="" DICOM="11112" ODOO_PORT="" DCM_WEB_PORT="" BACKUP_REPO="" BACKUP_PW="" LOAD_IMAGES="" PROJECT="" YES=0 WAIT=1200
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --site-name) SITE_NAME="$2"; shift 2 ;;
@@ -38,13 +40,15 @@ while [[ $# -gt 0 ]]; do
     --http-port) HTTP_PORT="$2"; shift 2 ;;
     --https-port) HTTPS_PORT="$2"; shift 2 ;;
     --dicom-port) DICOM="$2"; shift 2 ;;
+    --odoo-port) ODOO_PORT="$2"; shift 2 ;;
+    --pacs-web-port) DCM_WEB_PORT="$2"; shift 2 ;;
     --backup-repo) BACKUP_REPO="$2"; shift 2 ;;
     --backup-password) BACKUP_PW="$2"; shift 2 ;;
     --load-images) LOAD_IMAGES="$2"; shift 2 ;;
     --project-name) PROJECT="$2"; shift 2 ;;
     --wait-timeout) WAIT="$2"; shift 2 ;;
     --yes) YES=1; shift ;;
-    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
     *) die "unknown option: $1 (see --help)" ;;
   esac
 done
@@ -74,7 +78,7 @@ if ! command -v docker >/dev/null 2>&1; then
   ok "Docker installed: $(docker --version)"
 fi
 need docker curl openssl python3
-docker compose version >/dev/null 2>&1 || die "docker compose plugin missing"
+docker compose version >/dev/null 2>&1 || die "the docker compose plugin is missing - install it with 'apt-get install docker-compose-plugin' (Docker repo) or 'apt-get install docker-compose-v2' (Ubuntu 24.04+)"
 if [[ "$IS_ROOT" == 1 && "$OWNER" != root ]] && ! id -nG "$OWNER" | grep -qw docker; then
   usermod -aG docker "$OWNER" && ok "added $OWNER to the docker group (log out and in again for it to apply)"
 fi
@@ -88,15 +92,27 @@ SITE_NAME="${SITE_NAME:-$(hostname -s)}"
 [[ "$SITE_NAME" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "--site-name must be lowercase letters, digits and dashes"
 PRIMARY_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 HOSTNAME_FQDN="${HOSTNAME_FQDN:-$PRIMARY_IP}"
-ODOO_PORT="$(env_get ODOO_HOST_PORT)"; ODOO_PORT="${ODOO_PORT:-8069}"
-DCM_WEB_PORT="$(env_get DCM4CHEE_WEB_HOST_PORT)"; DCM_WEB_PORT="${DCM_WEB_PORT:-8055}"
+ODOO_PORT="${ODOO_PORT:-$(env_get ODOO_HOST_PORT)}"; ODOO_PORT="${ODOO_PORT:-8069}"
+DCM_WEB_PORT="${DCM_WEB_PORT:-$(env_get DCM4CHEE_WEB_HOST_PORT)}"; DCM_WEB_PORT="${DCM_WEB_PORT:-8055}"
+# Behind a front proxy the public URL has no port: the proxy serves 443 and forwards to HTTPS_PORT.
+PUBLIC_SUFFIX=""; [[ "$BEHIND_PROXY" == 0 && "$HTTPS_PORT" != 443 ]] && PUBLIC_SUFFIX=":$HTTPS_PORT"
+PUBLIC_URL="https://$HOSTNAME_FQDN$PUBLIC_SUFFIX"
+ERP_URL="https://erp-$HOSTNAME_FQDN$PUBLIC_SUFFIX"
 
 busy=""
 listening="$(ss -Hltn 2>/dev/null | awk '{print $4}')"
 for p in "$HTTP_PORT" "$HTTPS_PORT" "$DICOM" "$ODOO_PORT" "$DCM_WEB_PORT"; do
   grep -qE "[:.]${p}$" <<<"$listening" && busy="$busy $p"
 done
-[[ -z "$busy" ]] || die "port(s)$busy already in use on this host. Stop the other service or pass --behind-proxy / --http-port / --https-port / --dicom-port."
+[[ -z "$busy" ]] || die "port(s)$busy already in use on this host. Stop the other service or pass --behind-proxy / --http-port / --https-port / --dicom-port / --odoo-port / --pacs-web-port."
+
+# Shared servers: Bahmni Standard itself needs roughly 12 GB; below that Java services start swapping.
+avail_gb=$(( $(awk '/MemAvailable/ {print $2}' /proc/meminfo) / 1048576 ))
+(( avail_gb >= 12 )) || warn "only ${avail_gb} GB of RAM is available (other services are using the rest); Bahmni Standard wants ~12 GB. Consider COMPOSE_PROFILES=bahmni-standard (drops analytics, ~3 GB) or a dedicated server."
+# Docker's default container subnets are 172.17-172.31.x; a hospital LAN in that range would become unreachable from containers.
+if [[ "$PRIMARY_IP" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]]; then
+  warn "this server's LAN ($PRIMARY_IP) overlaps Docker's default container subnets. Set default-address-pools in /etc/docker/daemon.json (e.g. 10.200.0.0/16) and restart Docker BEFORE continuing, or containers will not reach the LAN."
+fi
 
 if [[ -z "$ADMIN_PW" ]]; then
   [[ "$YES" == 1 ]] && die "--admin-password is required with --yes"
@@ -116,8 +132,8 @@ cat <<EOF
 
 Bahmni Standard will be installed with:
   site name          $SITE_NAME
-  EMR address        https://$HOSTNAME_FQDN$( [[ "$HTTPS_PORT" != 443 ]] && echo ":$HTTPS_PORT" )   (Odoo: https://erp-$HOSTNAME_FQDN)
-  bind               $BIND:$HTTP_PORT / $BIND:$HTTPS_PORT   DICOM $BIND:$DICOM
+  EMR address        $PUBLIC_URL   (Odoo: $ERP_URL)
+  bind               $BIND:$HTTP_PORT / $BIND:$HTTPS_PORT   DICOM $BIND:$DICOM   helper ports 127.0.0.1:$ODOO_PORT / 127.0.0.1:$DCM_WEB_PORT
   admin login        $ADMIN_USER
   off-site backups   $( [[ -n "$BACKUP_REPO" ]] && echo "enabled -> $(sed -E 's#//[^/@]*@#//#' <<<"$BACKUP_REPO")" || echo "not configured (add later with scripts/backup_to_cloud.sh --install-cron)" )
   compose project    ${PROJECT:-$(basename "$COMPOSE_DIR")}
@@ -130,8 +146,10 @@ env_set BIND_IP "$BIND"
 env_set PROXY_HTTP_PORT "$HTTP_PORT"
 env_set PROXY_HTTPS_PORT "$HTTPS_PORT"
 env_set DICOM_PORT "$DICOM"
+env_set ODOO_HOST_PORT "$ODOO_PORT"
+env_set DCM4CHEE_WEB_HOST_PORT "$DCM_WEB_PORT"
 [[ -n "$PROJECT" ]] && env_set COMPOSE_PROJECT_NAME "$PROJECT"
-env_set METABASE_SITE_URL "https://$HOSTNAME_FQDN$( [[ "$HTTPS_PORT" != 443 ]] && echo ":$HTTPS_PORT" )/metabase"
+env_set METABASE_SITE_URL "$PUBLIC_URL/metabase"
 env_set OPENMRS_ADMIN_USER "$ADMIN_USER"
 for k in OPENMRS_ADMIN_PASSWORD OPENELIS_ADMIN_PASSWORD ODOO_ADMIN_PASSWORD DCM4CHEE_ADMIN_PASSWORD METABASE_ADMIN_PASSWORD; do
   env_set "$k" "$ADMIN_PW"
@@ -204,17 +222,50 @@ if [[ "$IS_ROOT" == 1 ]] && command -v ufw >/dev/null 2>&1 && [[ "$(ufw status 2
 fi
 
 # --- summary ----------------------------------------------------------------------------------
+PROXY_NOTE=""
+if [[ "$BEHIND_PROXY" == 1 ]]; then
+  # Same shape as the working cloud config: TLS terminated by the front proxy, Host preserved so the
+  # Bahmni proxy can route erp-* to Odoo, X-Forwarded-Proto so Odoo/Metabase build https links.
+  cat >"$COMPOSE_DIR/reverse-proxy-example.conf" <<EOF
+# nginx server block for Bahmni (generated by scripts/install.sh --behind-proxy).
+# Copy to /etc/nginx/sites-available/bahmni, set the certificate paths, enable, 'nginx -t', reload.
+server {
+    listen 80;
+    server_name $HOSTNAME_FQDN erp-$HOSTNAME_FQDN;
+    return 301 https://\$host\$request_uri;
+}
+server {
+    listen 443 ssl;
+    server_name $HOSTNAME_FQDN erp-$HOSTNAME_FQDN;
+    ssl_certificate     /etc/ssl/certs/bahmni-fullchain.pem;   # your certificate (or a self-signed one)
+    ssl_certificate_key /etc/ssl/private/bahmni-privkey.pem;
+    client_max_body_size 200m;
+    location / {
+        proxy_pass https://127.0.0.1:$HTTPS_PORT;
+        proxy_ssl_verify off;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 300s;
+    }
+}
+EOF
+  chmod 600 "$COMPOSE_DIR/reverse-proxy-example.conf"; [[ "$IS_ROOT" == 1 ]] && chown "$OWNER" "$COMPOSE_DIR/reverse-proxy-example.conf"
+  PROXY_NOTE="  0. Reverse proxy: Bahmni listens on 127.0.0.1:$HTTPS_PORT only. Add the server block in $COMPOSE_DIR/reverse-proxy-example.conf to your nginx (both host names must reach it)."$'\n'
+fi
 SUMMARY="$COMPOSE_DIR/install-summary.txt"
 {
 cat <<EOF
 Bahmni Standard - installation summary ($(date))
 =================================================
 Site name:        $SITE_NAME
-EMR / all apps:   https://$HOSTNAME_FQDN$( [[ "$HTTPS_PORT" != 443 ]] && echo ":$HTTPS_PORT" )/
-Billing (Odoo):   https://erp-$HOSTNAME_FQDN$( [[ "$HTTPS_PORT" != 443 ]] && echo ":$HTTPS_PORT" )/
-Lab (OpenELIS):   https://$HOSTNAME_FQDN$( [[ "$HTTPS_PORT" != 443 ]] && echo ":$HTTPS_PORT" )/openelis
-PACS console:     https://$HOSTNAME_FQDN$( [[ "$HTTPS_PORT" != 443 ]] && echo ":$HTTPS_PORT" )/dcm4chee-web3
-Analytics:        https://$HOSTNAME_FQDN$( [[ "$HTTPS_PORT" != 443 ]] && echo ":$HTTPS_PORT" )/metabase
+EMR / all apps:   $PUBLIC_URL/
+Billing (Odoo):   $ERP_URL/
+Lab (OpenELIS):   $PUBLIC_URL/openelis
+PACS console:     $PUBLIC_URL/dcm4chee-web3
+Analytics:        $PUBLIC_URL/metabase
 DICOM endpoint:   $PRIMARY_IP:$DICOM  AE title DCM4CHEE   (configure this on X-ray/CT/ultrasound machines)
 
 Logins (same password for all, the one you entered):
@@ -224,7 +275,7 @@ All other secrets (databases, service accounts, Odoo master password, backup key
   $ENV_FILE   <- back this file up to a password manager; a restore is impossible without it.
 
 Next steps:
-  1. DNS: point $HOSTNAME_FQDN and erp-$HOSTNAME_FQDN to $PRIMARY_IP on the hospital DNS server (or in each PC's hosts file).
+${PROXY_NOTE}  1. DNS: point $HOSTNAME_FQDN and erp-$HOSTNAME_FQDN to $PRIMARY_IP on the hospital DNS server (or in each PC's hosts file).
   2. The proxy uses a self-signed certificate; staff will see a browser warning once per PC unless you install a proper certificate.
   3. In the EMR go to Admin -> create the hospital's locations, wards, beds, providers and user accounts.
   4. Backups: $( [[ -n "$BACKUP_REPO" ]] && echo "nightly at 01:00 to $(sed -E 's#//[^/@]*@#//#' <<<"$BACKUP_REPO"); test a restore with scripts/restore_from_cloud.sh --list" || echo "NOT configured - run scripts/backup_to_cloud.sh --install-cron after adding BACKUP_* to .env" )

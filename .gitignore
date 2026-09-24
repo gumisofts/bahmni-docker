@@ -4,6 +4,7 @@
 **/restore-artifacts/*
 **/.env.bak.*
 **/install-summary.txt
+**/reverse-proxy-example.conf
 backup-server/.env
 .DS_Store
 .playwright-mcp/
