@@ -64,7 +64,8 @@ collide, and what the installer does about it:
 
 | Shared resource | Behaviour |
 |---|---|
-| Ports 80/443 taken (their website, another app) | `install.sh` refuses before touching anything. Use `--behind-proxy` and add the generated `reverse-proxy-example.conf` server block to their nginx, or move Bahmni with `--http-port/--https-port`. |
+| Ports 80/443 taken (their website, another app) | `install.sh` refuses before touching anything. Use `--behind-proxy` and add the generated `reverse-proxy-example.conf` server blocks to their nginx, or move Bahmni with `--http-port/--https-port`. |
+| Other host names pointing at the same server | nginx serves its *first* site to any host name without a site of its own. The generated config therefore includes a catch-all `default_server` that refuses unknown names, so Bahmni never answers for somebody else's domain. |
 | Port 11112 taken (another PACS) | `--dicom-port N`, then configure the modalities with that port. |
 | Ports 8069 / 8055 taken (another Odoo, anything) | These are localhost-only helper ports; `--odoo-port/--pacs-web-port N`. |
 | Existing Docker with other compose projects | Fine; use a distinct `--project-name` if the directory name clashes. |

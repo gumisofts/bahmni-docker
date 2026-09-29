@@ -72,8 +72,8 @@ EOF
     ok "nginx site already includes the backup location"
   else
     cp -p "$NGINX_SITE" "$NGINX_SITE.bak.$(date +%Y%m%d%H%M%S)"
-    # add the include right after every server_name line, i.e. once per server block
-    sed -i 's|^\(\s*\)server_name .*;$|&\n\1include snippets/bahmni-backup.conf;|' "$NGINX_SITE"
+    # add the include right after every server_name line, i.e. once per server block (not the catch-all '_')
+    sed -i 's|^\(\s*\)server_name \([^_].*\);$|&\n\1include snippets/bahmni-backup.conf;|' "$NGINX_SITE"
     if nginx -t >/dev/null 2>&1; then
       systemctl reload nginx && ok "nginx: added 'include snippets/bahmni-backup.conf' to $NGINX_SITE and reloaded"
     else
