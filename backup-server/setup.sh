@@ -12,17 +12,19 @@
 #   --nginx-site FILE      nginx server file to add the location to (default: /etc/nginx/sites-available/bahmni)
 #   --no-nginx             do not touch nginx (you publish 127.0.0.1:8000 yourself)
 #   --data-dir DIR         where repositories live (default: /srv/bahmni-backups)
+#   --port N               localhost port rest-server listens on (default: 8000; pick another if something else uses it)
 set -o pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF_DIR=/etc/bahmni-backup
-PUBLIC_URL=""; NGINX_SITE=/etc/nginx/sites-available/bahmni; NO_NGINX=0; DATA_DIR=/srv/bahmni-backups
+PUBLIC_URL=""; NGINX_SITE=/etc/nginx/sites-available/bahmni; NO_NGINX=0; DATA_DIR=/srv/bahmni-backups; PORT=8000
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --public-url) PUBLIC_URL="${2%/}"; shift 2 ;;
     --nginx-site) NGINX_SITE="$2"; shift 2 ;;
     --no-nginx) NO_NGINX=1; shift ;;
     --data-dir) DATA_DIR="$2"; shift 2 ;;
-    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+    --port) PORT="$2"; shift 2 ;;
+    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
     *) echo "unknown option $1"; exit 1 ;;
   esac
 done
@@ -34,32 +36,37 @@ die() { printf '%s [FAIL] %s\n' "$(date +%H:%M:%S)" "$*" >&2; exit 1; }
 command -v docker >/dev/null || die "docker is required"
 [[ "$PUBLIC_URL" =~ ^https?://[^/]+(/.*)?$ ]] || die "--public-url must be an absolute URL"
 LOCATION="${BASH_REMATCH[1]:-/}"; LOCATION="${LOCATION%/}/"
+[[ "$PORT" =~ ^[0-9]+$ ]] || die "--port must be a number"
+if ! docker inspect bahmni-backup-server >/dev/null 2>&1 && ss -Hltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${PORT}$"; then
+  die "port $PORT is already in use on this host (another service); choose one with --port"
+fi
 
 install -d -m 0700 "$DATA_DIR" "$CONF_DIR" "$CONF_DIR/keys" "$CONF_DIR/sites"
 cat >"$CONF_DIR/server.env" <<EOF
 PUBLIC_URL=$PUBLIC_URL
 DATA_DIR=$DATA_DIR
+REST_SERVER_PORT=$PORT
 KEEP_DAILY=7
 KEEP_WEEKLY=4
 KEEP_MONTHLY=12
 EOF
 chmod 600 "$CONF_DIR/server.env"
 DOCKER_GW="$(docker network inspect bridge -f '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || true)"
-printf 'BACKUP_DATA_DIR=%s\nREST_SERVER_BIND_GW=%s\n' "$DATA_DIR" "${DOCKER_GW:-127.0.0.2}" >"$HERE/.env"
+printf 'BACKUP_DATA_DIR=%s\nREST_SERVER_BIND_GW=%s\nREST_SERVER_PORT=%s\n' "$DATA_DIR" "${DOCKER_GW:-127.0.0.2}" "$PORT" >"$HERE/.env"
 
 log "starting rest-server ..."
 (cd "$HERE" && docker compose up -d 2>&1 | grep -vE 'obsolete') || die "docker compose up failed"
-for _ in $(seq 1 20); do curl -s -o /dev/null http://127.0.0.1:8000/ && break; sleep 1; done
-code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/probe/config)"
-[[ "$code" == 401 ]] && ok "rest-server is up and requires authentication" || die "rest-server answered HTTP $code on 127.0.0.1:8000"
+for _ in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$PORT/" && break; sleep 1; done
+code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/probe/config")"
+[[ "$code" == 401 ]] && ok "rest-server is up on 127.0.0.1:$PORT and requires authentication" || die "rest-server answered HTTP $code on 127.0.0.1:$PORT"
 
 if [[ "$NO_NGINX" == 0 ]]; then
-  command -v nginx >/dev/null || die "nginx not found; use --no-nginx and publish 127.0.0.1:8000 yourself"
+  command -v nginx >/dev/null || die "nginx not found; use --no-nginx and publish 127.0.0.1:$PORT yourself"
   [[ -f "$NGINX_SITE" ]] || die "nginx site $NGINX_SITE not found (use --nginx-site)"
   cat >/etc/nginx/snippets/bahmni-backup.conf <<EOF
 # restic rest-server for hospital backups (installed by backup-server/setup.sh)
 location $LOCATION {
-    proxy_pass http://127.0.0.1:8000/;
+    proxy_pass http://127.0.0.1:$PORT/;
     proxy_http_version 1.1;
     proxy_set_header Host \$host;
     client_max_body_size 0;

@@ -14,6 +14,7 @@ die() { printf '[FAIL] %s\n' "$*" >&2; exit 1; }
 [[ -f "$CONF_DIR/server.env" ]] || die "run backup-server/setup.sh first"
 # shellcheck disable=SC1091
 . "$CONF_DIR/server.env"
+PORT="${REST_SERVER_PORT:-8000}"
 [[ "$SITE" =~ ^[a-z0-9][a-z0-9-]{1,40}$ ]] || die "usage: add_site.sh <site-name>   (lowercase letters, digits, dashes)"
 docker inspect bahmni-backup-server >/dev/null 2>&1 || die "rest-server container is not running (backup-server/setup.sh)"
 
@@ -36,7 +37,7 @@ docker exec bahmni-backup-server create_user "$SITE" "$HTTP_PW" >/dev/null 2>&1 
 install -d -m 0700 "$DATA_DIR/$SITE"
 # rest-server re-reads .htpasswd every few seconds; 404 = authenticated, repository not initialised yet
 for _ in $(seq 1 20); do
-  code="$(curl -s -o /dev/null -w '%{http_code}' -u "$SITE:$HTTP_PW" "http://127.0.0.1:8000/$SITE/config")"
+  code="$(curl -s -o /dev/null -w '%{http_code}' -u "$SITE:$HTTP_PW" "http://127.0.0.1:$PORT/$SITE/config")"
   [[ "$code" == 404 || "$code" == 200 ]] && break; sleep 1
 done
 [[ "$code" == 404 || "$code" == 200 ]] || die "the new credentials are not accepted by rest-server (HTTP $code)"
@@ -59,5 +60,5 @@ $(cat "$SITE_FILE")
 
 A copy is kept in $SITE_FILE (root only). Without BACKUP_PASSWORD the backups cannot be decrypted.
 If this site runs on this very server (e.g. the cloud demo), it can skip the public URL and use:
-  BACKUP_REPOSITORY=rest:http://$SITE:$HTTP_PW@host.docker.internal:8000/$SITE
+  BACKUP_REPOSITORY=rest:http://$SITE:$HTTP_PW@host.docker.internal:$PORT/$SITE
 EOF
